@@ -1,0 +1,9 @@
+define
+user sub entity,
+    owns id @key,
+    owns invite-code,
+    plays friendship:friend;
+friendship sub relation,
+    relates friend;
+id sub attribute, value long;
+invite-code sub attribute, value string;
