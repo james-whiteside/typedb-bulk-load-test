@@ -3,6 +3,7 @@ import getpass
 import os
 import time
 from collections import deque
+from enum import Enum
 from typedb.api.connection.session import TypeDBSession
 from typedb.api.connection.transaction import TypeDBTransaction
 from typedb.common.exception import TypeDBDriverException
@@ -18,6 +19,8 @@ SCHEMA_TQL_FILE = "schema"
 DATA_TQL_FILES = ["entities", "relations"]
 BATCH_SIZES = [128, 256, 512, 1024, 2048]
 TRANSACTION_COUNTS = [1, 2, 4, 8, 16, 32, 64, 128, 256]
+TEST_REATTEMPT_WAIT = 10
+MAXIMUM_TEST_ATTEMPTS = 12
 
 
 class BulkLoader:
@@ -60,48 +63,75 @@ class BulkLoader:
         self._refresh_transactions_if_batches_full()
 
 
+class LogLevel(Enum):
+    INFO = "INFO"
+    WARN = "WARN"
+    ERROR = "ERROR"
+
+
+def print_to_log(message: str, log_level: LogLevel = LogLevel.INFO):
+    timestamp = datetime.datetime.now().strftime("%y-%m-%d %H:%M:%S")
+    log_level_width = max(len(level.value) for level in LogLevel)
+    log_prefix = f"{log_level.value: <{log_level_width}}"
+    print(f"{timestamp} {log_prefix} {message}")
+
+
 def bulk_load_test(credential: TypeDBCredential, batch_size: int | None, transaction_count: int) -> dict[str, int | float]:
     schema_path = f"{os.getcwd()}/{DATASET_DIR}/{SCHEMA_TQL_FILE}.tql"
     schema = open(schema_path, "r").read()
-    result = dict()
+    attempt_count = 1
+    print_to_log(f"Starting test.")
 
-    with TypeDB.cloud_driver(ADDRESS, credential) as driver:
-        print(f"Creating database.")
+    while attempt_count <= MAXIMUM_TEST_ATTEMPTS:
+        try:
+            print_to_log(f"Using batch size: {batch_size}")
+            print_to_log(f"Using transaction count: {transaction_count}")
+            result: dict[str, int | float] = dict()
 
-        if driver.databases.contains(DATABASE):
-            driver.databases.get(DATABASE).delete()
+            with TypeDB.cloud_driver(ADDRESS, credential) as driver:
+                print_to_log(f"  Creating database.")
 
-        driver.databases.create(DATABASE)
+                if driver.databases.contains(DATABASE):
+                    driver.databases.get(DATABASE).delete()
 
-        with driver.session(DATABASE, SessionType.SCHEMA) as session:
-            with session.transaction(TransactionType.WRITE) as transaction:
-                print(f"Defining schema.")
-                transaction.query.define(schema)
-                transaction.commit()
+                driver.databases.create(DATABASE)
 
-        with driver.session(DATABASE, SessionType.DATA) as session:
-            for file in DATA_TQL_FILES:
-                print(f"Loading data from file: {file}.tql")
-                print(f"  Using batch size: {batch_size}")
-                print(f"  Using transaction count: {transaction_count}")
-                query_count = 0
-                start = time.time()
-                bulk_loader = BulkLoader(session, batch_size, transaction_count)
-                data_path = f"{os.getcwd()}/{DATASET_DIR}/{file}.tql"
+                with driver.session(DATABASE, SessionType.SCHEMA) as session:
+                    with session.transaction(TransactionType.WRITE) as transaction:
+                        print_to_log(f"  Defining schema.")
+                        transaction.query.define(schema)
+                        transaction.commit()
 
-                with open(data_path, "r") as queries:
-                    for query in queries:
-                        bulk_loader.insert(query)
-                        query_count += 1
+                with driver.session(DATABASE, SessionType.DATA) as session:
+                    for file in DATA_TQL_FILES:
+                        print_to_log(f"  Loading data from file: {file}.tql")
 
-                bulk_loader.commit()
-                time_elapsed = time.time() - start
-                result[f"{file}_time"] = time_elapsed
-                result[f"{file}_count"] = query_count
-                print(f"  Data loading complete in: {time_elapsed} s")
-                print(f"  Total queries run: {query_count}")
+                        query_count = 0
+                        start = time.time()
+                        bulk_loader = BulkLoader(session, batch_size, transaction_count)
+                        data_path = f"{os.getcwd()}/{DATASET_DIR}/{file}.tql"
 
-    return result
+                        with open(data_path, "r") as queries:
+                            for query in queries:
+                                bulk_loader.insert(query)
+                                query_count += 1
+
+                        bulk_loader.commit()
+                        time_elapsed = time.time() - start
+                        result[f"{file}_time"] = time_elapsed
+                        result[f"{file}_count"] = query_count
+                        print_to_log(f"  Data loading complete in: {time_elapsed} s")
+                        print_to_log(f"  Total queries run: {query_count}")
+
+            return result
+        except TypeDBDriverException as exception:
+            print_to_log(f"Test failed due to TypeDB exception: {exception}", log_level=LogLevel.WARN)
+            attempt_count += 1
+            time.sleep(TEST_REATTEMPT_WAIT)
+            print_to_log(f"Re-starting test. Attempt: {attempt_count}")
+
+    print_to_log(f"Maximum test attempts reached: {MAXIMUM_TEST_ATTEMPTS}", log_level=LogLevel.ERROR)
+    raise RuntimeError(f"Maximum test attempts reached: {MAXIMUM_TEST_ATTEMPTS}")
 
 
 credential = TypeDBCredential(USERNAME, PASSWORD, tls_enabled=True)
