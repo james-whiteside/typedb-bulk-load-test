@@ -9,7 +9,7 @@ from typedb.api.connection.transaction import TypeDBTransaction
 from typedb.common.exception import TypeDBDriverException
 from typedb.driver import TypeDB, TypeDBCredential, SessionType, TransactionType
 
-ADDRESS = input("Address: ")
+ADDRESSES = input("Addresses: ").split(";")
 USERNAME = input("Username: ")
 PASSWORD = getpass.getpass()
 DATABASE = "batch-load"
@@ -88,7 +88,7 @@ def bulk_load_test(credential: TypeDBCredential, batch_size: int | None, transac
             print_to_log(f"Using transaction count: {transaction_count}")
             result: dict[str, int | float] = dict()
 
-            with TypeDB.cloud_driver(ADDRESS, credential) as driver:
+            with TypeDB.cloud_driver(ADDRESSES, credential) as driver:
                 print_to_log(f"  Creating database.")
 
                 if driver.databases.contains(DATABASE):
