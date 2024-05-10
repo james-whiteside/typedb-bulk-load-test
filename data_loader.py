@@ -2,12 +2,10 @@ import datetime
 import getpass
 import os
 import time
-from collections import deque
 from enum import Enum
-from typedb.api.connection.session import TypeDBSession
-from typedb.api.connection.transaction import TypeDBTransaction
 from typedb.common.exception import TypeDBDriverException
 from typedb.driver import TypeDB, TypeDBCredential, SessionType, TransactionType
+from bulk_loader import AsyncBulkLoader, BulkLoader
 
 ADDRESSES = input("Addresses: ").split(";")
 USERNAME = input("Username: ")
@@ -21,46 +19,7 @@ BATCH_SIZES = [128, 256, 512, 1024, 2048]
 TRANSACTION_COUNTS = [1, 2, 4, 8, 16, 32, 64, 128, 256]
 TEST_REATTEMPT_WAIT = 10
 MAXIMUM_TEST_ATTEMPTS = 12
-
-
-class BulkLoader:
-    def __init__(self, session: TypeDBSession, batch_size: int = None, transaction_count: int = 1):
-        self.session = session
-        self.batch_size = batch_size
-        self.transaction_count = transaction_count
-        self.transactions: deque[TypeDBTransaction] = deque()
-        self.uncommitted_queries = 0
-        self._open_transactions()
-
-    def __del__(self):
-        while self.transactions:
-            try:
-                self.transactions.pop().close()
-            except TypeDBDriverException:
-                continue
-
-    def _open_transactions(self) -> None:
-        for _ in range(self.transaction_count):
-            self.transactions.append(self.session.transaction(TransactionType.WRITE))
-
-    def commit(self) -> None:
-        while self.transactions:
-            self.transactions.popleft().commit()
-
-    def _refresh_transactions_if_batches_full(self) -> None:
-        if self.batch_size is None:
-            return
-        elif self.uncommitted_queries >= self.batch_size * self.transaction_count:
-            self.commit()
-            self.uncommitted_queries = 0
-            self._open_transactions()
-
-    def insert(self, query: str) -> None:
-        transaction = self.transactions.popleft()
-        transaction.query.insert(query)
-        self.transactions.append(transaction)
-        self.uncommitted_queries += 1
-        self._refresh_transactions_if_batches_full()
+USE_ASYNC = True
 
 
 class LogLevel(Enum):
@@ -76,16 +35,31 @@ def print_to_log(message: str, log_level: LogLevel = LogLevel.INFO):
     print(f"{timestamp} {log_prefix} {message}")
 
 
-def bulk_load_test(credential: TypeDBCredential, batch_size: int | None, transaction_count: int) -> dict[str, int | float]:
+def bulk_load_test(
+    credential: TypeDBCredential,
+    batch_size: int | None,
+    transaction_count: int,
+    use_async: bool,
+) -> dict[str, int | float]:
     schema_path = f"{os.getcwd()}/{DATASET_DIR}/{SCHEMA_TQL_FILE}.tql"
     schema = open(schema_path, "r").read()
     attempt_count = 1
     print_to_log(f"Starting test.")
 
+    if use_async:
+        bulk_loader_class = AsyncBulkLoader
+    else:
+        bulk_loader_class = BulkLoader
+
     while attempt_count <= MAXIMUM_TEST_ATTEMPTS:
         try:
+            print_to_log(f"Using async loader: {str(use_async).lower()}")
             print_to_log(f"Using batch size: {batch_size}")
             print_to_log(f"Using transaction count: {transaction_count}")
+
+            if use_async and batch_size > os.cpu_count():
+                print_to_log(f"Transaction count exceeds CPU count.")
+
             result: dict[str, int | float] = dict()
 
             with TypeDB.cloud_driver(ADDRESSES, credential) as driver:
@@ -105,18 +79,12 @@ def bulk_load_test(credential: TypeDBCredential, batch_size: int | None, transac
                 with driver.session(DATABASE, SessionType.DATA) as session:
                     for file in DATA_TQL_FILES:
                         print_to_log(f"  Loading data from file: {file}.tql")
-
                         query_count = 0
-                        start = time.time()
-                        bulk_loader = BulkLoader(session, batch_size, transaction_count)
                         data_path = f"{os.getcwd()}/{DATASET_DIR}/{file}.tql"
-
-                        with open(data_path, "r") as queries:
-                            for query in queries:
-                                bulk_loader.insert(query)
-                                query_count += 1
-
-                        bulk_loader.commit()
+                        start = time.time()
+                        bulk_loader = bulk_loader_class(data_path, session, batch_size, transaction_count)
+                        bulk_loader.load()
+                        query_count += bulk_loader.queries_run
                         time_elapsed = time.time() - start
                         result[f"{file}_time"] = time_elapsed
                         result[f"{file}_count"] = query_count
@@ -148,7 +116,7 @@ with open(output_path, "w") as output:
 
     for batch_size in BATCH_SIZES:
         for transaction_count in TRANSACTION_COUNTS:
-            result = bulk_load_test(credential, batch_size, transaction_count)
+            result = bulk_load_test(credential, batch_size, transaction_count, USE_ASYNC)
             entry = f"{batch_size},{transaction_count}"
 
             for file in DATA_TQL_FILES:
