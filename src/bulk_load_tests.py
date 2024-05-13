@@ -6,8 +6,8 @@ from typedb.api.connection.driver import TypeDBDriver
 from typedb.api.connection.session import SessionType
 from typedb.api.connection.transaction import TransactionType
 from typedb.common.exception import TypeDBDriverException
-from bulk_loader import AsyncBulkLoader, BulkLoader
-from utils import Config, Logger
+from src.bulk_loaders import AsyncBulkLoader, BulkLoader
+from src.utils import Config, Logger
 
 
 class BulkLoadTest:

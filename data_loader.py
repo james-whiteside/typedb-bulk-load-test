@@ -2,8 +2,8 @@ import datetime
 import getpass
 import os
 from typedb.driver import TypeDBCredential, TypeDB
-from bulk_load_test import BulkLoadTestBatch
-from utils import Config, Logger
+from src.bulk_load_tests import BulkLoadTestBatch
+from src.utils import Config, Logger
 
 config = Config()
 timestamp = datetime.datetime.now().strftime("%y-%m-%d_%H-%M-%S")
