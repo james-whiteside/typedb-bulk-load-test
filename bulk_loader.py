@@ -7,7 +7,7 @@ from typedb.common.exception import TypeDBDriverException
 
 
 class BulkLoader:
-    def __init__(self, file_paths: str | list[str], session: TypeDBSession, batch_size: int = None, transaction_count: int = 1):
+    def __init__(self, file_paths: str | list[str], session: TypeDBSession, batch_size: int, transaction_count: int):
         if type(file_paths) is str:
             self.file_paths = [file_paths]
         else:
