@@ -1,23 +1,22 @@
 import os
 import matplotlib.pyplot as pyplot
 from numpy import array
+from src.utils import Config
 
-RESULTS_DIR = "results"
-TEST_1_RESULT_FILES = ["24-05-07_15-07-11", "24-05-08_09-53-02", "24-05-08_10-09-31"]
-DATA_TQL_FILES = ["entities", "relations"]
-RESULT_FILES = TEST_1_RESULT_FILES
 
+config = Config()
 results: list[dict[str, float]] = list()
 
-for file in RESULT_FILES:
-    result_path = f"{os.getcwd()}/{RESULTS_DIR}/{file}.csv"
+for file in config.result_files:
+    result_path = f"{os.getcwd()}/{config.results_dir}/{file}.csv"
 
     with open(result_path, "r") as lines:
         header = next(lines).strip().split(",")
 
         for line in lines:
             entry = line.strip().split(",")
-            result = {key: float(value) for key, value in zip(header, entry)}
+            non_numeric_keys = ("async_loader",)
+            result = {key: float(value) for key, value in zip(header, entry) if key not in non_numeric_keys}
             results.append(result)
 
 batch_sizes: list[float] = list()
@@ -27,8 +26,8 @@ times_per_query: list[float] = list()
 for result in results:
     batch_size = result["batch_size"]
     transaction_count = result["transaction_count"]
-    total_queries = sum(result[f"{file}_count"] for file in DATA_TQL_FILES)
-    total_time = sum(result[f"{file}_time"] for file in DATA_TQL_FILES)
+    total_queries = sum(result[f"{file}_count"] for file in config.data_files)
+    total_time = sum(result[f"{file}_time"] for file in config.data_files)
     time_per_query = total_time / total_queries
     batch_sizes.append(batch_size)
     transaction_counts.append(transaction_count)
