@@ -2,6 +2,7 @@ import datetime
 import os
 from configparser import ConfigParser
 from enum import Enum
+from random import Random
 
 
 class Config:
@@ -10,18 +11,22 @@ class Config:
         parser = ConfigParser()
         parser.read(config_path)
         self.dataset_dir = self._str(parser["project"]["dataset_dir"])
-        self.schema_file = self._str(parser["project"]["schema_file"])
-        self.data_files = self._str_list(parser["project"]["data_files"])
         self.results_dir = self._str(parser["project"]["results_dir"])
         self.logs_dir = self._str(parser["project"]["logs_dir"])
-        self.addresses = self._str_list(parser["typedb"]["addresses"])
-        self.username = self._str(parser["typedb"]["username"])
-        self.database = self._str(parser["typedb"]["database"])
-        self.batch_sizes = self._int_list(parser["testing"]["batch_sizes"])
-        self.transaction_counts = self._int_list(parser["testing"]["transaction_counts"])
-        self.use_async = self._bool(parser["testing"]["use_async"])
-        self.test_reattempt_wait = self._int(parser["testing"]["test_reattempt_wait"])
-        self.maximum_test_attempts = self._str(parser["testing"]["maximum_test_attempts"])
+        self.addresses = self._str_list(parser["connection"]["addresses"])
+        self.username = self._str(parser["connection"]["username"])
+        self.database = self._str(parser["connection"]["database"])
+        self.entity_count = self._int(parser["generation"]["entity_count"])
+        self.relation_count = self._int(parser["generation"]["relation_count"])
+        self.attributes_per_entity = self._int(parser["generation"]["attributes_per_entity"])
+        self.random_seed = self._int(parser["generation"]["random_seed"])
+        self.schema_file = self._str(parser["loading"]["schema_file"])
+        self.data_files = self._str_list(parser["loading"]["data_files"])
+        self.use_async = self._bool(parser["loading"]["use_async"])
+        self.batch_sizes = self._int_list(parser["loading"]["batch_sizes"])
+        self.transaction_counts = self._int_list(parser["loading"]["transaction_counts"])
+        self.test_reattempt_wait = self._int(parser["loading"]["test_reattempt_wait"])
+        self.maximum_test_attempts = self._str(parser["loading"]["maximum_test_attempts"])
 
     @staticmethod
     def _str(value: str) -> str:
@@ -90,3 +95,27 @@ class Logger:
 
     def error(self, message: str):
         self._log(message, LogLevel.ERROR)
+
+
+class RandomGenerator:
+    char_set = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+    def __init__(self, seed = None):
+        self.seed = seed
+        self._random = Random(self.seed)
+        self.random_calls = 0
+
+    def int(self, maximum: int, minimum: int = 1) -> int:
+        self.random_calls += 1
+        return self._random.randint(minimum, maximum)
+
+    def char(self, char_set: str = None) -> str:
+        self.random_calls += 1
+
+        if char_set is None:
+            return self._random.choice(self.char_set)
+        else:
+            return self._random.choice(char_set)
+
+    def str(self, length: int, char_set: str = None) -> str:
+        return "".join(self.char(char_set) for _ in range(length))
