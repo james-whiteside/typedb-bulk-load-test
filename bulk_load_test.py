@@ -1,38 +1,46 @@
 import os
 import time
-
+from typing import Type
 from typedb.api.connection.driver import TypeDBDriver
 from typedb.api.connection.session import SessionType
 from typedb.api.connection.transaction import TransactionType
 from typedb.common.exception import TypeDBDriverException
-
 from bulk_loader import AsyncBulkLoader, BulkLoader
-from data_loader import DATASET_DIR, SCHEMA_TQL_FILE, LOGGER, MAXIMUM_TEST_ATTEMPTS, DATABASE, \
-    DATA_TQL_FILES, TEST_REATTEMPT_WAIT
+from utils import Config, Logger
 
 
 class BulkLoadTest:
-    def __init__(self, driver: TypeDBDriver, batch_size: int, transaction_count: int, use_async: bool):
+    def __init__(
+        self,
+        driver: TypeDBDriver,
+        batch_size: int,
+        transaction_count: int,
+        config: Config,
+        logger: Logger = Logger()
+    ):
         self.driver = driver
         self.batch_size = batch_size
         self.transaction_count = transaction_count
-        self.use_async = use_async
+        self.dataset_dir = config.dataset_dir
+        self.schema_file = config.schema_file
+        self.data_files = config.data_files
+        self.database = config.database
+        self.use_async = config.use_async
+        self.test_reattempt_wait = config.test_reattempt_wait
+        self.maximum_test_attempts = config.maximum_test_attempts
+        self.logger = logger
 
-        self.dataset_dir = DATASET_DIR
-        self.schema_tql_file = SCHEMA_TQL_FILE
-        self.logger = LOGGER
-        self.maximum_test_attempts = MAXIMUM_TEST_ATTEMPTS
-        self.database = DATABASE
-        self.data_tql_files = DATA_TQL_FILES
-        self.test_reattempt_wait = TEST_REATTEMPT_WAIT
+    @property
+    def schema(self) -> str:
+        schema_path = f"{os.getcwd()}/{self.dataset_dir}/{self.schema_file}.tql"
+        return open(schema_path, "r").read()
 
-        self.schema_path = f"{os.getcwd()}/{self.dataset_dir}/{self.schema_tql_file}.tql"
-        self.schema = open(self.schema_path, "r").read()
-
-        if use_async:
-            self.bulk_loader_class = AsyncBulkLoader
+    @property
+    def bulk_loader_class(self) -> Type[BulkLoader | AsyncBulkLoader]:
+        if self.use_async:
+            return AsyncBulkLoader
         else:
-            self.bulk_loader_class = BulkLoader
+            return BulkLoader
 
     def run(self) -> dict[str, int | float]:
         attempt_count = 1
@@ -61,7 +69,7 @@ class BulkLoadTest:
                         transaction.commit()
 
                 with self.driver.session(self.database, SessionType.DATA) as session:
-                    for file in self.data_tql_files:
+                    for file in self.data_files:
                         self.logger.info(f"  Loading data from file: {file}.tql")
                         query_count = 0
                         data_path = f"{os.getcwd()}/{self.dataset_dir}/{file}.tql"
