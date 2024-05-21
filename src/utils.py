@@ -28,6 +28,8 @@ class Config:
         self.test_reattempt_wait = self._int(parser["loading"]["test_reattempt_wait"])
         self.maximum_test_attempts = self._int(parser["loading"]["maximum_test_attempts"])
         self.result_files = self._str_list(parser["plotting"]["result_files"])
+        self.series_variable = self._str(parser["plotting"]["series_variable"])
+        self.axis_variable = self._str(parser["plotting"]["axis_variable"])
 
     @staticmethod
     def _str(value: str) -> str:

@@ -1,6 +1,5 @@
 import os
 import matplotlib.pyplot as pyplot
-from numpy import array
 from src.utils import Config
 
 
@@ -17,25 +16,21 @@ for file in config.result_files:
             entry = line.strip().split(",")
             non_numeric_keys = ("async_loader",)
             result = {key: float(value) for key, value in zip(header, entry) if key not in non_numeric_keys}
+            result.update({key: value for key, value in zip(header, entry) if key in non_numeric_keys})
             results.append(result)
 
-batch_sizes: list[float] = list()
-transaction_counts: list[float] = list()
-times_per_query: list[float] = list()
-
 for result in results:
-    batch_size = result["batch_size"]
-    transaction_count = result["transaction_count"]
-    total_queries = sum(result[f"{file}_count"] for file in config.data_files)
-    total_time = sum(result[f"{file}_time"] for file in config.data_files)
-    time_per_query = total_time / total_queries
-    batch_sizes.append(batch_size)
-    transaction_counts.append(transaction_count)
-    times_per_query.append(time_per_query)
+    result["total_count"] = sum(result[f"{file}_count"] for file in config.data_files)
+    result["total_time"] = sum(result[f"{file}_time"] for file in config.data_files)
+    result["total_rate"] = result["total_count"] / result["total_time"]
 
-figure, axes = pyplot.subplots(subplot_kw={"projection": "3d"})
-axes.plot_trisurf(array(batch_sizes), array(transaction_counts), array(times_per_query))
-axes.set_xlabel("batch_size")
-axes.set_ylabel("transaction_count")
-axes.set_zlabel("time_per_query")
+for series_value in sorted({result[config.series_variable] for result in results}):
+    transaction_counts = [result[config.axis_variable] for result in results if result[config.series_variable] == series_value]
+    total_rates = [result["total_rate"] for result in results if result[config.series_variable] == series_value]
+    series_label = f"""{"async" if result["async_loader"] == "true" else "sync"} {int(series_value)}"""
+    pyplot.plot(transaction_counts, total_rates, label=series_label, marker="o")
+
+pyplot.xlabel(config.axis_variable.replace("_", " "))
+pyplot.ylabel("load rate (query / s)")
+pyplot.legend(title=config.series_variable.replace("_", " "))
 pyplot.show()
