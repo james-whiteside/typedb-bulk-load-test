@@ -51,7 +51,7 @@ class BulkLoadTest:
                 self.logger.info(f"Using batch size: {self.batch_size}")
                 self.logger.info(f"Using transaction count: {self.transaction_count}")
 
-                if self.config.use_async and self.batch_size > os.cpu_count():
+                if self.config.use_async and self.transaction_count > os.cpu_count():
                     self.logger.warn(f"Transaction count exceeds CPU count.")
 
                 result = {
