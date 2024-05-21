@@ -117,6 +117,6 @@ class BulkLoadTestBatch:
     def run(self) -> Iterator[dict]:
         for batch_size in self.config.batch_sizes:
             for transaction_count in self.config.transaction_counts:
-                bulk_load = BulkLoadTest(self.driver, batch_size, transaction_count, self.config)
+                bulk_load = BulkLoadTest(self.driver, batch_size, transaction_count, self.config, self.logger)
                 result = bulk_load.run()
                 yield result
