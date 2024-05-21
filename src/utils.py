@@ -27,7 +27,7 @@ class Config:
         self.transaction_counts = self._int_list(parser["loading"]["transaction_counts"])
         self.test_reattempt_wait = self._int(parser["loading"]["test_reattempt_wait"])
         self.maximum_test_attempts = self._str(parser["loading"]["maximum_test_attempts"])
-        self.result_files = self._str(parser["plotting"]["result_files"])
+        self.result_files = self._str_list(parser["plotting"]["result_files"])
 
     @staticmethod
     def _str(value: str) -> str:
