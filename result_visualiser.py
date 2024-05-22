@@ -24,11 +24,17 @@ for result in results:
     result["total_time"] = sum(result[f"{file}_time"] for file in config.data_files)
     result["total_rate"] = result["total_count"] / result["total_time"]
 
-for series_value in sorted({result[config.series_variable] for result in results}):
-    transaction_counts = [result[config.axis_variable] for result in results if result[config.series_variable] == series_value]
-    total_rates = [result["total_rate"] for result in results if result[config.series_variable] == series_value]
-    series_label = f"""{"async" if result["async_loader"] == "true" else "sync"} {int(series_value)}"""
-    pyplot.plot(transaction_counts, total_rates, label=series_label, marker="o")
+for series_value, async_loader in sorted({(result[config.series_variable], result["async_loader"]) for result in results}):
+    axis_values = list()
+    total_rates = list()
+
+    for result in results:
+        if result[config.series_variable] == series_value and result["async_loader"] == async_loader:
+            axis_values.append(result[config.axis_variable])
+            total_rates.append(result["total_rate"])
+
+    series_label = f"""{"async" if async_loader == "true" else "sync"} {int(series_value)}"""
+    pyplot.plot(axis_values, total_rates, label=series_label, marker="o")
 
 pyplot.xlabel(config.axis_variable.replace("_", " "))
 pyplot.ylabel("load rate (query / s)")
