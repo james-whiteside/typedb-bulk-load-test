@@ -96,16 +96,17 @@ class AsyncBulkLoader:
 
         yield next_batch
 
-    def _load_batch(self, batch: list[str]) -> None:
-        with self.session.transaction(TransactionType.WRITE) as transaction:
-            for query in batch:
-                transaction.query.insert(query)
+    @staticmethod
+    def _load_batch(batch: list[str], transaction: TypeDBTransaction) -> None:
+        for query in batch:
+            transaction.query.insert(query)
 
-            transaction.commit()
+        transaction.commit()
 
     def load(self) -> None:
         for batch in self._batches():
-            args = (batch,)
+            transaction = self.session.transaction(TransactionType.WRITE)
+            args = (batch, transaction)
             self._worker_pool.apply_async(self._load_batch, args=args)
 
         self._worker_pool.close()
