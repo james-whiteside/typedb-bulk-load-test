@@ -132,7 +132,7 @@ class Config:
         self.random_seed = self._int(parser["generation"]["random_seed"])
         self.schema_file = self._str(parser["loading"]["schema_file"])
         self.data_files = self._str_list(parser["loading"]["data_files"])
-        self.loader_type = self._loader_type(parser["loading"]["loader_type"])
+        self.loader_types = self._list_loader_type(parser["loading"]["loader_types"])
         self.batch_sizes = self._int_list(parser["loading"]["batch_sizes"])
         self.transaction_counts = self._int_list(parser["loading"]["transaction_counts"])
         self.test_reattempt_wait = self._int(parser["loading"]["test_reattempt_wait"])
@@ -176,3 +176,7 @@ class Config:
     @staticmethod
     def _loader_type(value: str) -> LoaderType:
         return LoaderType(Config._str(value))
+
+    @staticmethod
+    def _list_loader_type(value: str) -> list[LoaderType]:
+        return [Config._loader_type(item) for item in Config._str_list(value)]

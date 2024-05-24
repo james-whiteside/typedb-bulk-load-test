@@ -8,7 +8,7 @@ from src.bulk_loaders import BulkLoader, CarouselBulkLoader, PoolBulkLoader
 from src.utils import Logger, LoaderType, Config
 
 
-def _init_loader(loader_type: LoaderType, file_paths: str | list[str], batch_size: int, transaction_count: int, config: Config) -> BulkLoader:
+def init_loader(loader_type: LoaderType, file_paths: str | list[str], batch_size: int, transaction_count: int, config: Config) -> BulkLoader:
     match loader_type:
         case LoaderType.CAROUSEL:
             constructor = CarouselBulkLoader
@@ -26,7 +26,8 @@ def _init_loader(loader_type: LoaderType, file_paths: str | list[str], batch_siz
 
 
 class BulkLoadTest:
-    def __init__(self, batch_size: int, transaction_count: int, config: Config, logger: Logger = None):
+    def __init__(self, loader_type: LoaderType, batch_size: int, transaction_count: int, config: Config, logger: Logger = None):
+        self.loader_type = loader_type
         self.batch_size = batch_size
         self.transaction_count = transaction_count
         self.config = config
@@ -46,15 +47,15 @@ class BulkLoadTest:
         self.logger.info(f"Starting test.")
 
         while attempt_count <= self.config.maximum_test_attempts:
-            self.logger.info(f"Using async loader: {self.config.loader_type.value}")
+            self.logger.info(f"Using loader: {self.loader_type.value}")
             self.logger.info(f"Using batch size: {self.batch_size}")
             self.logger.info(f"Using transaction count: {self.transaction_count}")
 
-            if self.config.loader_type is LoaderType.POOL and self.transaction_count > os.cpu_count():
+            if self.loader_type is LoaderType.POOL and self.transaction_count > os.cpu_count():
                 self.logger.warn(f"Transaction count exceeds CPU count.")
 
             result = {
-                "loader_type": self.config.loader_type,
+                "loader_type": self.loader_type.value,
                 "batch_size": self.batch_size,
                 "transaction_count": self.transaction_count,
             }
@@ -79,7 +80,7 @@ class BulkLoadTest:
                     query_count = 0
                     data_path = f"{os.getcwd()}/{self.config.dataset_dir}/{file}.tql"
                     start = time.time()
-                    bulk_loader = _init_loader(self.config.loader_type, data_path, self.batch_size, self.transaction_count, self.config)
+                    bulk_loader = init_loader(self.loader_type, data_path, self.batch_size, self.transaction_count, self.config)
                     bulk_loader.load()
                     query_count += bulk_loader.queries_run
                     time_elapsed = time.time() - start
@@ -100,11 +101,7 @@ class BulkLoadTest:
 
 
 class BulkLoadTestBatch:
-    def __init__(
-        self,
-        config: Config,
-        logger: Logger = None
-    ):
+    def __init__(self, config: Config, logger: Logger = None):
         self.config = config
 
         if logger is None:
@@ -113,8 +110,13 @@ class BulkLoadTestBatch:
             self.logger = logger
 
     def run(self) -> Iterator[dict]:
-        for batch_size in self.config.batch_sizes:
-            for transaction_count in self.config.transaction_counts:
-                bulk_load = BulkLoadTest(batch_size, transaction_count, self.config, self.logger)
-                result = bulk_load.run()
-                yield result
+        for loader_type in self.config.loader_types:
+            for batch_size in self.config.batch_sizes:
+                for transaction_count in self.config.transaction_counts:
+                    test = BulkLoadTest(loader_type, batch_size, transaction_count, self.config, self.logger)
+
+                    try:
+                        result = test.run()
+                        yield result
+                    except RuntimeError:
+                        continue
