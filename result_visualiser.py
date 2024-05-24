@@ -14,7 +14,7 @@ for file in config.result_files:
 
         for line in lines:
             entry = line.strip().split(",")
-            non_numeric_keys = ("async_loader",)
+            non_numeric_keys = ("loader_type",)
             result = {key: float(value) for key, value in zip(header, entry) if key not in non_numeric_keys}
             result.update({key: value for key, value in zip(header, entry) if key in non_numeric_keys})
             results.append(result)
@@ -24,16 +24,16 @@ for result in results:
     result["total_time"] = sum(result[f"{file}_time"] for file in config.data_files)
     result["total_rate"] = result["total_count"] / result["total_time"]
 
-for series_value, async_loader in sorted({(result[config.series_variable], result["async_loader"]) for result in results}):
+for series_value, loader_type in sorted({(result[config.series_variable], result["loader_type"]) for result in results}):
     axis_values = list()
     total_rates = list()
 
     for result in results:
-        if result[config.series_variable] == series_value and result["async_loader"] == async_loader:
+        if result[config.series_variable] == series_value and result["loader_type"] == loader_type:
             axis_values.append(result[config.axis_variable])
             total_rates.append(result["total_rate"])
 
-    series_label = f"""{"async" if async_loader == "true" else "sync"} {int(series_value)}"""
+    series_label = f"""{loader_type} {int(series_value)}"""
     pyplot.plot(axis_values, total_rates, label=series_label, marker="o")
 
 pyplot.xlabel(config.axis_variable.replace("_", " "))
