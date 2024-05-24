@@ -1,11 +1,14 @@
+import multiprocessing.connection
 from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import Iterator
-from multiprocessing import Pool, Queue
+from multiprocessing import Pool, Queue, Manager
 from typedb.api.connection.session import SessionType
 from typedb.api.connection.transaction import TransactionType, TypeDBTransaction
 from typedb.common.exception import TypeDBDriverException
-from src.utils import DriverType, Config
+from src.utils import DriverType, Config, LoaderType
+from src.mp_socket_client import socket_client
+multiprocessing.connection.SocketClient = socket_client(reattempt_wait=0.01)
 
 
 class BulkLoader(ABC):
@@ -17,12 +20,12 @@ class BulkLoader(ABC):
 
         self.batch_size = batch_size
         self.transaction_count = transaction_count
-        self._config = config
+        self.config = config
         self.queries_run = 0
 
     @property
     @abstractmethod
-    def loader_type(self) -> str:
+    def loader_type(self) -> LoaderType:
         ...
 
     @abstractmethod
@@ -33,8 +36,8 @@ class BulkLoader(ABC):
 class CarouselBulkLoader(BulkLoader):
     def __init__(self, file_paths: str | list[str], batch_size: int, transaction_count: int, config: Config):
         super().__init__(file_paths, batch_size, transaction_count, config)
-        self._driver = self._config.driver_type.init(self._config.addresses, self._config.username, self._config.password)
-        self._session = self._driver.session(self._config.database, SessionType.DATA)
+        self._driver = self.config.driver_type.init(self.config.addresses, self.config.username, self.config.password)
+        self._session = self._driver.session(self.config.database, SessionType.DATA)
         self._transactions: deque[TypeDBTransaction] = deque()
         self._uncommitted_queries = 0
         self._open_transactions()
@@ -54,8 +57,8 @@ class CarouselBulkLoader(BulkLoader):
             self._driver.close()
 
     @property
-    def loader_type(self) -> str:
-        return "carousel"
+    def loader_type(self) -> LoaderType:
+        return LoaderType.CAROUSEL
 
     def _queries(self) -> Iterator[str]:
         for path in self.file_paths:
@@ -99,12 +102,10 @@ class PoolBulkLoader(BulkLoader):
 
     def __init__(self, file_paths: str | list[str], batch_size: int, transaction_count: int, config: Config):
         super().__init__(file_paths, batch_size, transaction_count, config)
-        self._worker_pool = Pool(self.transaction_count)
-        self._batch_queue = Queue(self._queue_length_factor * self.transaction_count)
 
     @property
-    def loader_type(self) -> str:
-        return "pool"
+    def loader_type(self) -> LoaderType:
+        return LoaderType.POOL
 
     def _queries(self) -> Iterator[str]:
         for path in self.file_paths:
@@ -126,30 +127,18 @@ class PoolBulkLoader(BulkLoader):
         yield next_batch
 
     @staticmethod
-    def _add_batches_to_queue(
-        batches: Iterator[list[str]],
-        queue: Queue,
-        pool_size: int,
-    ):
-        for batch in batches:
-            queue.put(batch)
-
-        for _ in range(pool_size):
-            queue.put(None)
-
-    @staticmethod
-    def _load_batches_from_queue(
+    def _batch_loader(
         queue: Queue,
         driver_type: DriverType,
         addresses: str | list[str],
         username: str,
         password: str,
         database: str,
-    ):
+    ) -> None:
         with driver_type.init(addresses, username, password) as driver:
             with driver.session(database, SessionType.DATA) as session:
                 while True:
-                    batch: str | None = queue.get()
+                    batch: list[str] | None = queue.get()
 
                     if batch is None:
                         break
@@ -161,25 +150,27 @@ class PoolBulkLoader(BulkLoader):
                             transaction.commit()
 
     def load(self) -> None:
-        add_kwargs = {
-            "batches": self._batches,
-            "queue": self._batch_queue,
-            "pool_size": self.transaction_count,
-        }
+        with Manager() as manager:
+            pool = Pool(self.transaction_count)
+            queue = manager.Queue(self._queue_length_factor * self.transaction_count)
 
-        self._worker_pool.apply_async(self._add_batches_to_queue, kwds=add_kwargs)
+            kwargs = {
+                "queue": queue,
+                "driver_type": self.config.driver_type,
+                "addresses": self.config.addresses,
+                "username": self.config.username,
+                "password": self.config.password,
+                "database": self.config.database,
+            }
 
-        load_kwargs = {
-            "queue": self._batch_queue,
-            "driver_type": self._config.driver_type,
-            "addresses": self._config.addresses,
-            "username": self._config.username,
-            "password": self._config.password,
-            "database": self._config.database,
-        }
+            for _ in range(self.transaction_count):
+                pool.apply_async(self._batch_loader, kwds=kwargs)
 
-        for _ in range(self.transaction_count):
-            self._worker_pool.apply_async(self._load_batches_from_queue, kwds=load_kwargs)
+            for batch in self._batches():
+                queue.put(batch)
 
-        self._worker_pool.close()
-        self._worker_pool.join()
+            for _ in range(self.transaction_count):
+                queue.put(None)
+
+            pool.close()
+            pool.join()
