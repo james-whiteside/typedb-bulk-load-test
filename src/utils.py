@@ -2,57 +2,47 @@ import datetime
 import os
 from configparser import ConfigParser
 from enum import Enum
+from getpass import getpass
 from random import Random
+from typedb.api.connection.credential import TypeDBCredential
+from typedb.api.connection.driver import TypeDBDriver
+from typedb.driver import TypeDB
 
 
-class Config:
-    def __init__(self, path: str = "config.ini"):
-        config_path = f"{os.getcwd()}/{path}"
-        parser = ConfigParser()
-        parser.read(config_path)
-        self.dataset_dir = self._str(parser["project"]["dataset_dir"])
-        self.results_dir = self._str(parser["project"]["results_dir"])
-        self.logs_dir = self._str(parser["project"]["logs_dir"])
-        self.addresses = self._str_list(parser["connection"]["addresses"])
-        self.username = self._str(parser["connection"]["username"])
-        self.database = self._str(parser["connection"]["database"])
-        self.entity_count = self._int(parser["generation"]["entity_count"])
-        self.relation_count = self._int(parser["generation"]["relation_count"])
-        self.attributes_per_entity = self._int(parser["generation"]["attributes_per_entity"])
-        self.random_seed = self._int(parser["generation"]["random_seed"])
-        self.schema_file = self._str(parser["loading"]["schema_file"])
-        self.data_files = self._str_list(parser["loading"]["data_files"])
-        self.use_async = self._bool(parser["loading"]["use_async"])
-        self.batch_sizes = self._int_list(parser["loading"]["batch_sizes"])
-        self.transaction_counts = self._int_list(parser["loading"]["transaction_counts"])
-        self.test_reattempt_wait = self._int(parser["loading"]["test_reattempt_wait"])
-        self.maximum_test_attempts = self._int(parser["loading"]["maximum_test_attempts"])
-        self.result_files = self._str_list(parser["plotting"]["result_files"])
-        self.series_variable = self._str(parser["plotting"]["series_variable"])
-        self.axis_variable = self._str(parser["plotting"]["axis_variable"])
+class LoaderType(Enum):
+    CAROUSEL = "carousel"
+    POOL = "pool"
 
-    @staticmethod
-    def _str(value: str) -> str:
-        return value.strip()
 
-    @staticmethod
-    def _int(value: str) -> int:
-        return int(Config._str(value))
+class DriverType(Enum):
+    CORE = "core"
+    CLOUD = "cloud"
 
-    @staticmethod
-    def _bool(value: str) -> bool:
-        if Config._str(value) not in ("true", "false"):
-            raise ValueError(f"Boolean config value must be 'true' or 'false', not: '{Config._str(value)}'")
+    @property
+    def _constructor(self):
+        match self:
+            case DriverType.CORE:
+                return TypeDB.core_driver
+            case DriverType.CLOUD:
+                return TypeDB.cloud_driver
 
-        return Config._str(value) == "true"
+    def init(self, addresses: str | list[str], username: str = None, password: str = None) -> TypeDBDriver:
+        match self:
+            case DriverType.CORE:
+                if type(addresses) is str:
+                    kwargs = {"address": addresses}
+                else:
+                    kwargs = {"address": addresses[0]}
+            case DriverType.CLOUD:
+                if None in (username, password):
+                    raise ValueError("Username or password not set for TypeDB Cloud driver.")
 
-    @staticmethod
-    def _str_list(value: str) -> list[str]:
-        return [Config._str(item) for item in value.strip().lstrip("[").rstrip("]").split(",")]
+                kwargs = {
+                    "addresses": addresses,
+                    "credential": TypeDBCredential(username, password, tls_enabled=True),
+                }
 
-    @staticmethod
-    def _int_list(value: str) -> list[int]:
-        return [Config._int(item) for item in Config._str_list(value)]
+        return self._constructor(**kwargs)
 
 
 class LogLevel(Enum):
@@ -122,3 +112,71 @@ class RandomGenerator:
 
     def str(self, length: int, char_set: str = None) -> str:
         return "".join(self.char(char_set) for _ in range(length))
+
+
+class Config:
+    def __init__(self, path: str = "config.ini"):
+        config_path = f"{os.getcwd()}/{path}"
+        parser = ConfigParser()
+        parser.read(config_path)
+        self.dataset_dir = self._str(parser["project"]["dataset_dir"])
+        self.results_dir = self._str(parser["project"]["results_dir"])
+        self.logs_dir = self._str(parser["project"]["logs_dir"])
+        self.driver_type = self._driver_type(parser["connection"]["driver_type"])
+        self.addresses = self._str_list(parser["connection"]["addresses"])
+        self.username = self._str(parser["connection"]["username"])
+        self.database = self._str(parser["connection"]["database"])
+        self.entity_count = self._int(parser["generation"]["entity_count"])
+        self.relation_count = self._int(parser["generation"]["relation_count"])
+        self.attributes_per_entity = self._int(parser["generation"]["attributes_per_entity"])
+        self.random_seed = self._int(parser["generation"]["random_seed"])
+        self.schema_file = self._str(parser["loading"]["schema_file"])
+        self.data_files = self._str_list(parser["loading"]["data_files"])
+        self.loader_types = self._list_loader_type(parser["loading"]["loader_types"])
+        self.batch_sizes = self._int_list(parser["loading"]["batch_sizes"])
+        self.transaction_counts = self._int_list(parser["loading"]["transaction_counts"])
+        self.test_reattempt_wait = self._int(parser["loading"]["test_reattempt_wait"])
+        self.maximum_test_attempts = self._int(parser["loading"]["maximum_test_attempts"])
+        self.result_files = self._str_list(parser["plotting"]["result_files"])
+        self.series_variable = self._str(parser["plotting"]["series_variable"])
+        self.axis_variable = self._str(parser["plotting"]["axis_variable"])
+
+        if self.driver_type is DriverType.CLOUD:
+            self.password = getpass()
+        else:
+            self.password = None
+
+    @staticmethod
+    def _str(value: str) -> str:
+        return value.strip()
+
+    @staticmethod
+    def _int(value: str) -> int:
+        return int(Config._str(value))
+
+    @staticmethod
+    def _bool(value: str) -> bool:
+        if Config._str(value) not in ("true", "false"):
+            raise ValueError(f"Boolean config value must be 'true' or 'false', not: '{Config._str(value)}'")
+
+        return Config._str(value) == "true"
+
+    @staticmethod
+    def _str_list(value: str) -> list[str]:
+        return [Config._str(item) for item in value.strip().lstrip("[").rstrip("]").split(",")]
+
+    @staticmethod
+    def _int_list(value: str) -> list[int]:
+        return [Config._int(item) for item in Config._str_list(value)]
+
+    @staticmethod
+    def _driver_type(value: str) -> DriverType:
+        return DriverType(Config._str(value))
+
+    @staticmethod
+    def _loader_type(value: str) -> LoaderType:
+        return LoaderType(Config._str(value))
+
+    @staticmethod
+    def _list_loader_type(value: str) -> list[LoaderType]:
+        return [Config._loader_type(item) for item in Config._str_list(value)]
