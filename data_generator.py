@@ -1,5 +1,5 @@
 import os
-from src.utils import Config, RandomGenerator
+from src.utils import RandomGenerator, Config
 
 ENTITY_TYPE = "user"
 ID_TYPE = "id"
