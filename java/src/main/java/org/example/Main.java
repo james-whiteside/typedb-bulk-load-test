@@ -30,15 +30,14 @@ public class Main {
         ArrayList<String> filepaths = new ArrayList<>(List.of("../dataset/entities.tql", "../dataset/relations.tql"));
         int batchSize = 2;
         int transactionCount = 5;
-//        Set<String> addresses = Set.of("localhost:1729");
-        String address = "localhost:1729";
+        Set<String> addresses = Set.of("localhost:1729");
         String username = "admin";
         String password = "password";
         String database = "bulk-load-test";
         TypeDBCredential credential = new TypeDBCredential(username, password, true);
         String schema = Files.readString(Paths.get("../dataset/schema.tql"));
 
-        try (TypeDBDriver driver = TypeDB.coreDriver(address)) {
+        try (TypeDBDriver driver = TypeDB.cloudDriver(addresses, credential)) {
             if (driver.databases().contains(database)) driver.databases().get(database).delete();
             driver.databases().create(database);
 

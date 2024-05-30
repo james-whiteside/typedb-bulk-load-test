@@ -101,19 +101,15 @@ async function loadBatch(batch: Array<string>, session: TypeDBSession): Promise<
 }
 
 async function loadDataAsync(addresses: Array<string>, username: string, password: string): Promise<void> {
-    // const database: string = "bookstore";
-    // const dataFiles: Array<string> = ["contributors.tql", "publishers.tql", "books.tql"];
     const database: string = "bulk-load-test";
     const dataFiles: Array<string> = ["../dataset/entities.tql", "../dataset/relations.tql"];
-    // const batchSize: number = 100;
-    const batchSize: number = 5;
+    const batchSize: number = 100;
 
     let credential: TypeDBCredential = new TypeDBCredential(username, password);
     let driver: TypeDBDriver;
 
     try {
-        driver = await TypeDB.coreDriver("localhost:1729");
-        // driver = await TypeDB.cloudDriver(addresses, credential);
+        driver = await TypeDB.cloudDriver(addresses, credential);
         let session: TypeDBSession;
 
         try {
