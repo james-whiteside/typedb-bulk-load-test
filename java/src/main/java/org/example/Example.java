@@ -20,6 +20,33 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Example {
+    public static void loadBatch(TypeDBSession session, List<String> batch) {
+        try (TypeDBTransaction transaction = session.transaction(TypeDBTransaction.Type.WRITE)) {
+            for (String query: batch) {
+                transaction.query().insert(query);
+            }
+            transaction.commit();
+        }
+    }
+
+    public static void loadData(Set<String> addresses, String username, String password) throws FileNotFoundException {
+        String database = "bookstore";
+        ArrayList<String> dataFiles = new ArrayList<>(List.of("contributors.tql", "publishers.tql", "books.tql"));
+        int batchSize = 100;
+        TypeDBCredential credential = new TypeDBCredential(username, password, true);
+
+        try (TypeDBDriver driver = TypeDB.cloudDriver(addresses, credential)) {
+            try (TypeDBSession session = driver.session(database, TypeDBSession.Type.DATA)) {
+                BatchIterator batchIterator = new BatchIterator(dataFiles, batchSize);
+
+                while (batchIterator.hasNext()) {
+                    List<String> batch = batchIterator.next();
+                    loadBatch(session, batch);
+                }
+            }
+        }
+    }
+
     public static void addBatches(
         ArrayList<String> filepaths,
         int batchSize,
