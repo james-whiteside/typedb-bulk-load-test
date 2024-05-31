@@ -100,6 +100,29 @@ async function loadBatch(batch: Array<string>, session: TypeDBSession): Promise<
     }
 }
 
+async function loadData(addresses: Array<string>, username: string, password: string): Promise<void> {
+    const database: string = "bulk-load-test";
+    const dataFiles: Array<string> = ["../dataset/entities.tql", "../dataset/relations.tql"];
+    const batchSize: number = 100;
+
+    let credential: TypeDBCredential = new TypeDBCredential(username, password);
+    let driver: TypeDBDriver;
+
+    try {
+        driver = await TypeDB.cloudDriver(addresses, credential);
+        let session: TypeDBSession;
+
+        try {
+            session = await driver.session(database, SessionType.DATA);
+            let batchIterator = new BatchIterator(dataFiles, batchSize);
+
+            for await (let batch of batchIterator) {
+                await loadBatch(batch, session);
+            }
+        } finally { await session?.close() }
+    } finally { await driver?.close() }
+}
+
 async function loadDataAsync(addresses: Array<string>, username: string, password: string): Promise<void> {
     const database: string = "bulk-load-test";
     const dataFiles: Array<string> = ["../dataset/entities.tql", "../dataset/relations.tql"];
