@@ -47,20 +47,6 @@ public class Example {
         }
     }
 
-    public static void addBatches(
-        ArrayList<String> filepaths,
-        int batchSize,
-        LinkedBlockingQueue<Either<List<String>, NullType>> queue,
-        AtomicBoolean hasError
-    ) throws InterruptedException, FileNotFoundException {
-        BatchIterator batchIterator = new BatchIterator(filepaths, batchSize);
-
-        while (batchIterator.hasNext() && !hasError.get()) {
-            List<String> batch = batchIterator.next();
-            queue.put(Either.first(batch));
-        }
-    }
-
     public static CompletableFuture<Void> scheduleBatchLoader(
         ExecutorService executor,
         LinkedBlockingQueue<Either<List<String>, NullType>> queue,
@@ -104,7 +90,12 @@ public class Example {
                         batchLoadersFutures.add(scheduleBatchLoader(executor, queue, session, hasError));
                     }
 
-                    addBatches(new ArrayList<>(List.of(dataFile)), batchSize, queue, hasError);
+                    BatchIterator batchIterator = new BatchIterator(new ArrayList<>(List.of(dataFile)), batchSize);
+
+                    while (batchIterator.hasNext() && !hasError.get()) {
+                        List<String> batch = batchIterator.next();
+                        queue.put(Either.first(batch));
+                    }
 
                     for (int i = 0; i < poolSize; i++) {
                         queue.put(Either.second(null));
